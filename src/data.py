@@ -3,6 +3,7 @@ import torch
 import torch.utils.data
 from pathlib import Path
 from torchvision import datasets, transforms
+import torchvision.transforms as T
 import multiprocessing
 
 from .helpers import compute_mean_and_std, get_data_location
@@ -48,12 +49,57 @@ def get_data_loaders(
     data_transforms = {
         "train": transforms.Compose(
             # YOUR CODE HERE
+            [
+                # resize the image to 256 first
+                T.Resize(256),
+                
+                # crop them to 224
+                T.RandomCrop(224),
+                
+                # Horizontal flip
+                T.RandomHorizontalFlip(0.5),
+                
+                # Use RandAugment
+                # RandAugment has 2 main parameters: how many transformations should be
+                # applied to each image, and the strength of these transformations. This latter parameter should be tuned 
+                # through experiments: the higher the more the regularization effect.
+                # Setup a T.RandAugment transformation using 2 as num_opts, and the rand_augment_magnitude input parameter as magnitude. 
+                # Use T.InterpolationMode.BILINEAR as interpolation. Look at the pytorch manual if needed: 
+                # https://pytorch.org/vision/main/generated/torchvision.transforms.RandAugment.html
+                
+                T.RandAugment(
+                    num_ops = 2,
+                    magnitude = 9,
+                    interpolation = T.InterpolationMode.BILINEAR,
+                ),
+                
+                T.ToTensor(),
+                T.Normalize(mean, std),
+            ]
         ),
         "valid": transforms.Compose(
             # YOUR CODE HERE
+            [
+                # resize the image to 256 first, crop them to 224
+                T.Resize(256),
+                T.CenterCrop(224),
+                
+                # Convert to tensor and apply normalization:
+                T.ToTensor(),
+                T.Normalize(mean, std),
+            ]
         ),
         "test": transforms.Compose(
             # YOUR CODE HERE
+            [
+                # resize the image to 256 first, crop them to 224
+                T.Resize(256),
+                T.CenterCrop(224),
+                
+                # Convert to tensor and apply normalization:
+                T.ToTensor(),
+                T.Normalize(mean, std),
+            ]
         ),
     }
 
@@ -62,6 +108,7 @@ def get_data_loaders(
         base_path / "train",
         # YOUR CODE HERE: add the appropriate transform that you defined in
         # the data_transforms dictionary
+        transform=data_transforms['train']
     )
     # The validation dataset is a split from the train_one_epoch dataset, so we read
     # from the same folder, but we apply the transforms for validation
@@ -69,6 +116,7 @@ def get_data_loaders(
         base_path / "train",
         # YOUR CODE HERE: add the appropriate transform that you defined in
         # the data_transforms dictionary
+        transform=data_transforms['valid']
     )
 
     # obtain training indices that will be used for validation
@@ -85,7 +133,7 @@ def get_data_loaders(
 
     # define samplers for obtaining training and validation batches
     train_sampler = torch.utils.data.SubsetRandomSampler(train_idx)
-    valid_sampler  = # YOUR CODE HERE
+    valid_sampler = torch.utils.data.SubsetRandomSampler(valid_idx)# YOUR CODE HERE
 
     # prepare data loaders
     data_loaders["train"] = torch.utils.data.DataLoader(
@@ -96,12 +144,17 @@ def get_data_loaders(
     )
     data_loaders["valid"] = torch.utils.data.DataLoader(
         # YOUR CODE HERE
+        valid_data,
+        batch_size=batch_size,
+        sampler=valid_sampler,
+        num_workers=num_workers,
     )
 
     # Now create the test data loader
     test_data = datasets.ImageFolder(
         base_path / "test",
         # YOUR CODE HERE (add the test transform)
+        transform=data_transforms['test']
     )
 
     if limit > 0:
@@ -112,6 +165,10 @@ def get_data_loaders(
 
     data_loaders["test"] = torch.utils.data.DataLoader(
         # YOUR CODE HERE (remember to add shuffle=False as well)
+        test_data,
+        batch_size=batch_size,
+        sampler=test_sampler,
+        num_workers=num_workers,
     )
 
     return data_loaders
@@ -129,11 +186,11 @@ def visualize_one_batch(data_loaders, max_n: int = 5):
     # YOUR CODE HERE:
     # obtain one batch of training images
     # First obtain an iterator from the train dataloader
-    dataiter  = # YOUR CODE HERE
+    dataiter  = iter(data_loaders['train'])# YOUR CODE HERE
     # Then call the .next() method on the iterator you just
     # obtained
-    images, labels  = # YOUR CODE HERE
-
+    images, labels  = dataiter.next()# YOUR CODE HERE
+    
     # Undo the normalization (for visualization purposes)
     mean, std = compute_mean_and_std()
     invTrans = transforms.Compose(
@@ -143,15 +200,14 @@ def visualize_one_batch(data_loaders, max_n: int = 5):
         ]
     )
 
-    images = invTrans(images)
+    images_raw = invTrans(images)
 
-    # YOUR CODE HERE:
     # Get class names from the train data loader
-    class_names  = # YOUR CODE HERE
-
+    class_names = data_loaders['train'].dataset.classes # YOUR CODE HERE
+    
     # Convert from BGR (the format used by pytorch) to
     # RGB (the format expected by matplotlib)
-    images = torch.permute(images, (0, 2, 3, 1)).clip(0, 1)
+    images = torch.permute(images_raw, (0, 2, 3, 1)).clip(0, 1)
 
     # plot the images in the batch, along with the corresponding labels
     fig = plt.figure(figsize=(25, 4))
